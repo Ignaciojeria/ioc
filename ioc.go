@@ -10,9 +10,8 @@ import (
 	"github.com/heimdalr/dag"
 )
 
-// Container holds the dependency graph and all registered constructors.
-// Use New() to create an instance, or use the package-level Default container.
-type Container struct {
+// container holds the dependency graph and all registered constructors.
+type container struct {
 	graph                  *dag.DAG
 	errs                   []error
 	dependencyContainerMap map[string]entry
@@ -40,17 +39,17 @@ func (v visitor) Visit(vertex dag.Vertexer) {
 	*v.orderedDependencyKeys = append(*v.orderedDependencyKeys, key.(string))
 }
 
-// New creates a new, empty Container ready for dependency registration.
-func New() *Container {
-	return &Container{
+// newContainer creates a new, empty container ready for dependency registration.
+func newContainer() *container {
+	return &container{
 		graph:                  dag.NewDAG(),
 		dependencyContainerMap: make(map[string]entry),
 	}
 }
 
-// Reset clears all registered dependencies and errors, returning the container
-// to its initial state. Useful for testing.
-func (c *Container) Reset() {
+// reset clears all registered dependencies and errors, returning the container
+// to its initial state. Used internally for testing.
+func (c *container) reset() {
 	c.graph = dag.NewDAG()
 	c.errs = nil
 	c.dependencyContainerMap = make(map[string]entry)
@@ -64,7 +63,7 @@ func (c *Container) Reset() {
 //
 // Returns an error if the constructor is invalid, already registered, or
 // cannot be added to the dependency graph.
-func (c *Container) Register(ctor constructor, deps ...constructor) error {
+func (c *container) Register(ctor constructor, deps ...constructor) error {
 	ctorKey, err := getConstructorKey(ctor)
 	if err != nil {
 		return fmt.Errorf("register: %w", err)
@@ -92,7 +91,7 @@ func (c *Container) Register(ctor constructor, deps ...constructor) error {
 // registered; they will run in the order they were registered.
 //
 // Returns an error if the constructor is invalid.
-func (c *Container) RegisterAtEnd(ctor constructor, deps ...constructor) error {
+func (c *container) RegisterAtEnd(ctor constructor, deps ...constructor) error {
 	ctorKey, err := getConstructorKey(ctor)
 	if err != nil {
 		return fmt.Errorf("registerAtEnd: %w", err)
@@ -108,7 +107,7 @@ func (c *Container) RegisterAtEnd(ctor constructor, deps ...constructor) error {
 
 // LoadDependencies builds the dependency graph, resolves the topological order,
 // invokes all registered constructors, and finally invokes any at-end constructors.
-func (c *Container) LoadDependencies() error {
+func (c *container) LoadDependencies() error {
 	// Return the first accumulated error, if any.
 	if len(c.errs) > 0 {
 		return c.errs[0]
@@ -151,7 +150,7 @@ func (c *Container) LoadDependencies() error {
 
 // invokeConstructor invokes a single registered constructor by its key,
 // resolving its dependencies from already-initialized entries.
-func (c *Container) invokeConstructor(key string) error {
+func (c *container) invokeConstructor(key string) error {
 	e := c.dependencyContainerMap[key]
 	value := reflect.ValueOf(e.constructor)
 
@@ -181,7 +180,7 @@ func (c *Container) invokeConstructor(key string) error {
 }
 
 // invokeAtEndConstructor invokes a single at-end constructor.
-func (c *Container) invokeAtEndConstructor(atEnd entry) error {
+func (c *container) invokeAtEndConstructor(atEnd entry) error {
 	value := reflect.ValueOf(atEnd.constructor)
 
 	if err := validateReturnSignature(atEnd.id, value); err != nil {
@@ -203,7 +202,7 @@ func (c *Container) invokeAtEndConstructor(atEnd entry) error {
 
 // resolveArgs resolves the already-initialized dependencies for a list of
 // constructor parameters.
-func (c *Container) resolveArgs(params []constructor) ([]reflect.Value, error) {
+func (c *container) resolveArgs(params []constructor) ([]reflect.Value, error) {
 	var args []reflect.Value
 	for _, param := range params {
 		dep, err := c.get(param)
@@ -216,7 +215,7 @@ func (c *Container) resolveArgs(params []constructor) ([]reflect.Value, error) {
 }
 
 // getEntry returns the entry for a constructor, or an error if not found.
-func (c *Container) getEntry(ctor constructor) (entry, error) {
+func (c *container) getEntry(ctor constructor) (entry, error) {
 	ctorKey, err := getConstructorKey(ctor)
 	if err != nil {
 		return entry{}, fmt.Errorf("getEntry: %w", err)
@@ -230,7 +229,7 @@ func (c *Container) getEntry(ctor constructor) (entry, error) {
 
 // get returns the resolved dependency for a constructor, or an error if
 // the dependency has not yet been initialized.
-func (c *Container) get(ctor constructor) (dependency, error) {
+func (c *container) get(ctor constructor) (dependency, error) {
 	ctorKey, err := getConstructorKey(ctor)
 	if err != nil {
 		return nil, err
@@ -343,31 +342,30 @@ func getConstructorKey(ctor constructor) (string, error) {
 	return packageName + "." + functionName, nil
 }
 
-// --- Default global container ---
+// --- default global container ---
 
-// Default is the package-level Container used by the top-level Register,
-// RegisterAtEnd, and LoadDependencies functions.
-var Default = New()
+var defaultContainer = newContainer()
 
-// Register registers a constructor on the Default container.
-// See Container.Register for details.
+// Register registers a constructor and its dependency constructors.
+// The constructor must be a function. Dependencies are identified by their
+// function pointer and resolved automatically during LoadDependencies.
 func Register(ctor constructor, deps ...constructor) error {
-	return Default.Register(ctor, deps...)
+	return defaultContainer.Register(ctor, deps...)
 }
 
-// RegisterAtEnd registers an at-end constructor on the Default container.
-// See Container.RegisterAtEnd for details.
+// RegisterAtEnd registers a constructor to be invoked after all other
+// dependencies have been resolved.
 func RegisterAtEnd(ctor constructor, deps ...constructor) error {
-	return Default.RegisterAtEnd(ctor, deps...)
+	return defaultContainer.RegisterAtEnd(ctor, deps...)
 }
 
-// LoadDependencies resolves and initializes all dependencies on the Default container.
-// See Container.LoadDependencies for details.
+// LoadDependencies builds the dependency graph, resolves the topological order,
+// and invokes all registered constructors.
 func LoadDependencies() error {
-	return Default.LoadDependencies()
+	return defaultContainer.LoadDependencies()
 }
 
-// Reset clears the Default container. See Container.Reset for details.
-func Reset() {
-	Default.Reset()
+// reset clears the default container. Used internally for testing.
+func resetDefault() {
+	defaultContainer.reset()
 }

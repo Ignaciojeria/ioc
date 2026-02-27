@@ -77,39 +77,15 @@ func main() {
 }
 ```
 
-## 🏗️ Advanced: Using a Container
-
-For testing or multiple independent dependency graphs, create your own `Container`:
-
-```go
-c := ioc.New()
-
-c.Register(NewMessage)
-c.Register(NewGreeter, NewMessage)
-c.Register(NewEvent, NewGreeter)
-
-if err := c.LoadDependencies(); err != nil {
-    log.Fatal(err)
-}
-
-// Reset the container for a clean slate (useful in tests).
-c.Reset()
-```
-
 ## 📌 API
 
-| Function / Method | Description |
+| Function | Description |
 |---|---|
-| `ioc.New()` | Create a new independent `Container` |
-| `c.Register(ctor, deps...)` | Register a constructor and its dependencies |
-| `c.RegisterAtEnd(ctor, deps...)` | Register a constructor to run after all others |
-| `c.LoadDependencies()` | Resolve and invoke all constructors |
-| `c.Reset()` | Clear all state (for testing) |
-| `ioc.Register(...)` | Shortcut using the default global container |
-| `ioc.RegisterAtEnd(...)` | Shortcut using the default global container |
-| `ioc.LoadDependencies()` | Shortcut using the default global container |
-| `ioc.Reset()` | Reset the default global container |
+| `ioc.Register(ctor, deps...)` | Register a constructor and its dependencies |
+| `ioc.RegisterAtEnd(ctor, deps...)` | Register a constructor to run after all others |
+| `ioc.LoadDependencies()` | Resolve and invoke all constructors in topological order |
 
 ## 📜 License
 
 MIT
+

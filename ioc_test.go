@@ -153,7 +153,7 @@ func testAtEndFailing(m testMessage) error {
 // --- Tests ---
 
 func TestBasicResolution(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -178,7 +178,7 @@ func TestBasicResolution(t *testing.T) {
 }
 
 func TestDependencyChain(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// Register in arbitrary order — the DAG should sort them.
 	if err := c.Register(newTestEvent, newTestGreeter); err != nil {
@@ -210,7 +210,7 @@ func TestDependencyChain(t *testing.T) {
 }
 
 func TestConstructorWithError(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestFailingConstructor); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -226,7 +226,7 @@ func TestConstructorWithError(t *testing.T) {
 }
 
 func TestConstructorReturningValueAndNilError(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessageWithError); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -252,7 +252,7 @@ func TestConstructorReturningValueAndNilError(t *testing.T) {
 
 func TestRegisterAtEnd(t *testing.T) {
 	atEndCalled = false
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -278,7 +278,7 @@ func TestRegisterAtEnd(t *testing.T) {
 
 func TestMultipleRegisterAtEnd(t *testing.T) {
 	atEndOrder = nil
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -300,7 +300,7 @@ func TestMultipleRegisterAtEnd(t *testing.T) {
 }
 
 func TestRegisterAtEndFailing(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -319,7 +319,7 @@ func TestRegisterAtEndFailing(t *testing.T) {
 }
 
 func TestDuplicateRegistration(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("first Register failed: %v", err)
@@ -332,7 +332,7 @@ func TestDuplicateRegistration(t *testing.T) {
 }
 
 func TestNonFunctionRegistration(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	err := c.Register("not a function")
 	if err == nil {
@@ -341,7 +341,7 @@ func TestNonFunctionRegistration(t *testing.T) {
 }
 
 func TestNonFunctionRegisterAtEnd(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	err := c.RegisterAtEnd("not a function")
 	if err == nil {
@@ -350,7 +350,7 @@ func TestNonFunctionRegisterAtEnd(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -359,7 +359,7 @@ func TestReset(t *testing.T) {
 		t.Fatalf("LoadDependencies failed: %v", err)
 	}
 
-	c.Reset()
+	c.reset()
 
 	// After reset, should be able to register and resolve again.
 	if err := c.Register(newTestMessage); err != nil {
@@ -379,7 +379,7 @@ func TestReset(t *testing.T) {
 }
 
 func TestMissingDependency(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// Register newTestGreeter which depends on newTestMessage, but don't register newTestMessage.
 	if err := c.Register(newTestGreeter, newTestMessage); err != nil {
@@ -393,8 +393,8 @@ func TestMissingDependency(t *testing.T) {
 }
 
 func TestMultipleContainers(t *testing.T) {
-	c1 := New()
-	c2 := New()
+	c1 := newContainer()
+	c2 := newContainer()
 
 	if err := c1.Register(newTestMessage); err != nil {
 		t.Fatalf("c1 Register failed: %v", err)
@@ -428,7 +428,7 @@ func TestMultipleContainers(t *testing.T) {
 // --- Validation edge case tests ---
 
 func TestConstructorWithThreeReturnValues(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestThreeReturns); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -441,7 +441,7 @@ func TestConstructorWithThreeReturnValues(t *testing.T) {
 }
 
 func TestConstructorWithBadSecondReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestBadSecondReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -454,7 +454,7 @@ func TestConstructorWithBadSecondReturn(t *testing.T) {
 }
 
 func TestVoidConstructor(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -469,7 +469,7 @@ func TestVoidConstructor(t *testing.T) {
 }
 
 func TestPointerReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestServicePtr); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -490,7 +490,7 @@ func TestPointerReturn(t *testing.T) {
 }
 
 func TestSingleReturnError(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestSingleErrorReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -506,7 +506,7 @@ func TestSingleReturnError(t *testing.T) {
 }
 
 func TestSingleReturnNilError(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestSingleNilErrorReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -519,7 +519,7 @@ func TestSingleReturnNilError(t *testing.T) {
 }
 
 func TestSliceReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestSliceReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -540,7 +540,7 @@ func TestSliceReturn(t *testing.T) {
 }
 
 func TestMapReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMapReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -561,7 +561,7 @@ func TestMapReturn(t *testing.T) {
 }
 
 func TestChanReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestChanReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -581,7 +581,7 @@ func TestChanReturn(t *testing.T) {
 }
 
 func TestFuncReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestFuncReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -601,7 +601,7 @@ func TestFuncReturn(t *testing.T) {
 }
 
 func TestInterfaceArgument(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestStringerImpl); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -624,7 +624,7 @@ func TestInterfaceArgument(t *testing.T) {
 }
 
 func TestInterfaceArgumentNotImplemented(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// Register a non-stringer and try to pass it where a stringer is expected.
 	if err := c.Register(newTestNonStringer); err != nil {
@@ -641,7 +641,7 @@ func TestInterfaceArgumentNotImplemented(t *testing.T) {
 }
 
 func TestArgumentTypeMismatch(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// newTestGreeter expects testMessage, but we give it newTestServicePtr.
 	if err := c.Register(newTestServicePtr); err != nil {
@@ -660,7 +660,7 @@ func TestArgumentTypeMismatch(t *testing.T) {
 // --- Global wrapper tests ---
 
 func TestGlobalRegisterAndLoad(t *testing.T) {
-	Reset()
+	resetDefault()
 
 	if err := Register(newTestMessage); err != nil {
 		t.Fatalf("global Register failed: %v", err)
@@ -673,12 +673,12 @@ func TestGlobalRegisterAndLoad(t *testing.T) {
 		t.Fatalf("global LoadDependencies failed: %v", err)
 	}
 
-	Reset() // cleanup
+	resetDefault() // cleanup
 }
 
 func TestGlobalRegisterAtEnd(t *testing.T) {
 	atEndCalled = false
-	Reset()
+	resetDefault()
 
 	if err := Register(newTestMessage); err != nil {
 		t.Fatalf("global Register failed: %v", err)
@@ -701,30 +701,30 @@ func TestGlobalRegisterAtEnd(t *testing.T) {
 		t.Fatal("expected atEnd to be called via global wrapper")
 	}
 
-	Reset() // cleanup
+	resetDefault() // cleanup
 }
 
 func TestGlobalReset(t *testing.T) {
-	Reset()
+	resetDefault()
 
 	if err := Register(newTestMessage); err != nil {
 		t.Fatalf("global Register failed: %v", err)
 	}
 
-	Reset()
+	resetDefault()
 
 	// After reset, should be able to register again.
 	if err := Register(newTestMessage); err != nil {
 		t.Fatalf("global Register after Reset failed: %v", err)
 	}
 
-	Reset() // cleanup
+	resetDefault() // cleanup
 }
 
 // --- AtEnd validation edge cases ---
 
 func TestRegisterAtEndWithThreeReturns(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -742,7 +742,7 @@ func TestRegisterAtEndWithThreeReturns(t *testing.T) {
 }
 
 func TestRegisterAtEndMissingDependency(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -760,7 +760,7 @@ func TestRegisterAtEndMissingDependency(t *testing.T) {
 }
 
 func TestRegisterAtEndArgumentMismatch(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestMessage); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -780,7 +780,7 @@ func TestRegisterAtEndArgumentMismatch(t *testing.T) {
 // --- LoadDependencies accumulated error ---
 
 func TestLoadDependenciesWithAccumulatedErrors(t *testing.T) {
-	c := New()
+	c := newContainer()
 	c.errs = append(c.errs, errors.New("accumulated error"))
 
 	err := c.LoadDependencies()
@@ -795,7 +795,7 @@ func TestLoadDependenciesWithAccumulatedErrors(t *testing.T) {
 // --- Empty container ---
 
 func TestEmptyContainerLoad(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.LoadDependencies(); err != nil {
 		t.Fatalf("LoadDependencies on empty container failed: %v", err)
@@ -805,7 +805,7 @@ func TestEmptyContainerLoad(t *testing.T) {
 // --- Constructor returning nil pointer ---
 
 func TestNilPointerReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestNilPtr); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -820,7 +820,7 @@ func TestNilPointerReturn(t *testing.T) {
 // --- Constructor returning nil slice ---
 
 func TestNilSliceReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestNilSliceReturn); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -840,7 +840,7 @@ func newTestConfig() testConfig {
 }
 
 func TestStructReturn(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	if err := c.Register(newTestConfig); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -863,7 +863,7 @@ func TestStructReturn(t *testing.T) {
 // --- Internal function edge cases ---
 
 func TestGetEntryWithNonFunction(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	_, err := c.getEntry("not a function")
 	if err == nil {
@@ -872,7 +872,7 @@ func TestGetEntryWithNonFunction(t *testing.T) {
 }
 
 func TestGetWithNonFunction(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	_, err := c.get("not a function")
 	if err == nil {
@@ -892,7 +892,7 @@ func TestValidateArgumentsCountMismatch(t *testing.T) {
 }
 
 func TestInvokeConstructorResolveFails(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// Manually insert an entry that references a dependency not in the map,
 	// so invokeConstructor's resolveArgs will fail.
@@ -911,7 +911,7 @@ func TestInvokeConstructorResolveFails(t *testing.T) {
 }
 
 func TestRegisterAddVertexError(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// Pre-add the vertex key to the DAG to provoke AddVertex failure.
 	ctorKey, _ := getConstructorKey(newTestMessage)
@@ -924,7 +924,7 @@ func TestRegisterAddVertexError(t *testing.T) {
 }
 
 func TestLoadDependenciesAddEdgeError(t *testing.T) {
-	c := New()
+	c := newContainer()
 
 	// Register constructors normally.
 	if err := c.Register(newTestMessage); err != nil {
