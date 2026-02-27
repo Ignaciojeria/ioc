@@ -7,27 +7,6 @@
 
     go get github.com/Ignaciojeria/ioc@latest
 
-## 🧠 How it works
-
-```mermaid
-graph TD
-    A["1. Register constructors (any order)"] --> B["2. LoadDependencies()"]
-    B --> C["Match parameter types to return types"]
-    C --> D["Build DAG edges automatically"]
-    D --> E["Topological sort"]
-    E --> F["Invoke constructors (leaves first)"]
-    F --> G["Invoke RegisterAtEnd constructors"]
-```
-
-**Example dependency graph:**
-
-```mermaid
-graph BT
-    NewMessage["NewMessage() → Message"] --> NewGreeter["NewGreeter(Message) → Greeter"]
-    NewGreeter --> NewEvent["NewEvent(Greeter) → Event"]
-    NewEvent -.-> AtEnd["RegisterAtEnd: StartServer(Event)"]
-```
-
 The framework **infers dependencies automatically** by matching parameter types to return types. No need to declare dependencies manually.
 
 It also features **100% type-safety**, **ambiguous dependency detection**, and **IDE-clickable error traces** (`file:line`).
@@ -76,6 +55,27 @@ func main() {
 	}
 	fmt.Println("Dependencies loaded!")
 }
+```
+
+## 🧠 How it works
+
+```mermaid
+graph TD
+    A["1. Register constructors (any order)"] --> B["2. LoadDependencies()"]
+    B --> C["Match parameter types to return types"]
+    C --> D["Build DAG edges automatically"]
+    D --> E["Topological sort"]
+    E --> F["Invoke constructors (leaves first)"]
+    F --> G["Invoke RegisterAtEnd constructors"]
+```
+
+**Example dependency graph:**
+
+```mermaid
+graph BT
+    NewMessage["NewMessage() → Message"] --> NewGreeter["NewGreeter(Message) → Greeter"]
+    NewGreeter --> NewEvent["NewEvent(Greeter) → Event"]
+    NewEvent -.-> AtEnd["RegisterAtEnd: StartServer(Event)"]
 ```
 
 ## 📌 API
