@@ -1,20 +1,47 @@
 # Golang Minimalist Dependency Injection Framework 🪡
 
+[![codecov](https://codecov.io/gh/Ignaciojeria/ioc/branch/main/graph/badge.svg)](https://codecov.io/gh/Ignaciojeria/ioc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Ignaciojeria/ioc)](https://goreportcard.com/report/github.com/Ignaciojeria/ioc)
+
 ## 🔧 Installation
 
     go get github.com/Ignaciojeria/ioc@latest
 
+## 🧠 How it works
+
+```mermaid
+graph TD
+    A["1. Register constructors (any order)"] --> B["2. LoadDependencies()"]
+    B --> C["Build DAG edges from dependencies"]
+    C --> D["Topological sort (OrderedWalk)"]
+    D --> E["Invoke constructors in reverse order (leaves first)"]
+    E --> F["Store each result for injection into dependents"]
+    F --> G["Invoke RegisterAtEnd constructors"]
+```
+
+**Example dependency graph:**
+
+```mermaid
+graph BT
+    NewMessage["NewMessage()"] --> NewGreeter["NewGreeter(Message)"]
+    NewGreeter --> NewEvent["NewEvent(Greeter)"]
+    NewEvent -.-> AtEnd["RegisterAtEnd: StartServer(Event)"]
+```
+
+The framework resolves this automatically — you register in **any order**, and it figures out: `NewMessage` → `NewGreeter` → `NewEvent` → `StartServer`.
+
 ## 👨‍💻 Quick Example
 
 ```go
-package main
+package myapp
 
-import (
-	"fmt"
-	"log"
+import "github.com/Ignaciojeria/ioc"
 
-	"github.com/Ignaciojeria/ioc"
-)
+// Register dependencies in any order using var _ = pattern.
+// The DAG resolves the correct initialization order.
+var _ = ioc.Register(NewEvent, NewGreeter)
+var _ = ioc.Register(NewGreeter, NewMessage)
+var _ = ioc.Register(NewMessage)
 
 type Message string
 
@@ -30,10 +57,6 @@ func NewGreeter(m Message) Greeter {
 	return Greeter{Message: m}
 }
 
-func (g Greeter) Greet() Message {
-	return g.Message
-}
-
 type Event struct {
 	Greeter Greeter
 }
@@ -41,19 +64,16 @@ type Event struct {
 func NewEvent(g Greeter) Event {
 	return Event{Greeter: g}
 }
+```
 
+Then in your main:
+
+```go
 func main() {
-	// No need to worry about order — the framework resolves
-	// dependencies in the correct topological order.
-	ioc.Register(NewEvent, NewGreeter)
-	ioc.Register(NewGreeter, NewMessage)
-	ioc.Register(NewMessage)
-
 	if err := ioc.LoadDependencies(); err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println("Dependencies loaded successfully!")
+	fmt.Println("Dependencies loaded!")
 }
 ```
 
