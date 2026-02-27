@@ -10,137 +10,170 @@ import (
 	"github.com/heimdalr/dag"
 )
 
-// container holds the dependency graph and all registered constructors.
+// container holds the type-based dependency registry and the DAG
+// for topological ordering.
 type container struct {
-	graph                  *dag.DAG
-	errs                   []error
-	dependencyContainerMap map[string]entry
-	orderedDependencyKeys  []string
-	atEndEntries           []entry
+	graph        *dag.DAG
+	typeToEntry  map[reflect.Type]entry // return type → entry
+	keyToEntry   map[string]entry       // function key → entry (for DAG ordering)
+	atEndEntries []entry
+	errs         []error
 }
 
 type dependency any
 type constructor any
 
 type entry struct {
-	id                    string
-	constructor           constructor
-	constructorParameters []constructor
-	dependency            dependency
+	dagID       string
+	key         string // function name key
+	file        string // file where the constructor is defined
+	line        int    // line number where the constructor is defined
+	constructor constructor
+	returnType  reflect.Type // the type this constructor provides
+	dependency  dependency   // the resolved instance after invocation
 }
 
-// visitor is used to walk the graph in topological order.
+// visitor walks the DAG in topological order.
 type visitor struct {
-	orderedDependencyKeys *[]string
+	orderedKeys *[]string
 }
 
 func (v visitor) Visit(vertex dag.Vertexer) {
 	_, key := vertex.Vertex()
-	*v.orderedDependencyKeys = append(*v.orderedDependencyKeys, key.(string))
+	*v.orderedKeys = append(*v.orderedKeys, key.(string))
 }
 
-// newContainer creates a new, empty container ready for dependency registration.
+// newContainer creates a new, empty container.
 func newContainer() *container {
 	return &container{
-		graph:                  dag.NewDAG(),
-		dependencyContainerMap: make(map[string]entry),
+		graph:       dag.NewDAG(),
+		typeToEntry: make(map[reflect.Type]entry),
+		keyToEntry:  make(map[string]entry),
 	}
 }
 
-// reset clears all registered dependencies and errors, returning the container
-// to its initial state. Used internally for testing.
+// reset clears all state. Used internally for testing.
 func (c *container) reset() {
 	c.graph = dag.NewDAG()
-	c.errs = nil
-	c.dependencyContainerMap = make(map[string]entry)
-	c.orderedDependencyKeys = nil
+	c.typeToEntry = make(map[reflect.Type]entry)
+	c.keyToEntry = make(map[string]entry)
 	c.atEndEntries = nil
+	c.errs = nil
 }
 
-// Register registers a constructor function and its dependency constructors.
-// The constructor must be a function. Dependencies are identified by their
-// function pointer and resolved automatically during LoadDependencies.
+// Register registers a constructor function. The framework automatically
+// infers dependencies by matching the constructor's parameter types to the
+// return types of other registered constructors.
 //
-// Returns an error if the constructor is invalid, already registered, or
-// cannot be added to the dependency graph.
-func (c *container) Register(ctor constructor, deps ...constructor) error {
-	ctorKey, err := getConstructorKey(ctor)
+// The constructor must be a function that returns at most 2 values.
+// If it returns 2 values, the second must be of type error.
+// The first return value's type becomes the "provided type" for other
+// constructors to depend on.
+func (c *container) Register(ctor constructor) error {
+	ctorKey, file, line, err := getConstructorInfo(ctor)
 	if err != nil {
 		return fmt.Errorf("register: %w", err)
 	}
 
-	if c.dependencyContainerMap[ctorKey].constructor != nil {
-		return fmt.Errorf("register: constructor already registered: %s", ctorKey)
-	}
+	ctorType := reflect.TypeOf(ctor)
 
-	id, err := c.graph.AddVertex(ctorKey)
+	// Determine the provided return type.
+	returnType, err := getReturnType(ctorKey, ctorType)
 	if err != nil {
-		return fmt.Errorf("register: failed to add vertex %s: %w", ctorKey, err)
+		return fmt.Errorf("%s:%d: register: %w", file, line, err)
 	}
 
-	c.dependencyContainerMap[ctorKey] = entry{
-		id:                    id,
-		constructor:           ctor,
-		constructorParameters: deps,
+	// Check for duplicate providers (only if constructor has a return type).
+	if returnType != nil {
+		if existing, exists := c.typeToEntry[returnType]; exists {
+			return fmt.Errorf("%s:%d: register: type %v is already provided by %s (%s:%d)", file, line, returnType, existing.key, existing.file, existing.line)
+		}
 	}
+
+	dagID, err := c.graph.AddVertex(ctorKey)
+	if err != nil {
+		return fmt.Errorf("%s:%d: register: failed to add vertex: %w", file, line, err)
+	}
+
+	e := entry{
+		dagID:       dagID,
+		key:         ctorKey,
+		file:        file,
+		line:        line,
+		constructor: ctor,
+		returnType:  returnType,
+	}
+
+	c.keyToEntry[ctorKey] = e
+	if returnType != nil {
+		c.typeToEntry[returnType] = e
+	}
+
 	return nil
 }
 
 // RegisterAtEnd registers a constructor to be invoked after all other
-// dependencies have been resolved. Multiple at-end constructors can be
-// registered; they will run in the order they were registered.
-//
-// Returns an error if the constructor is invalid.
-func (c *container) RegisterAtEnd(ctor constructor, deps ...constructor) error {
-	ctorKey, err := getConstructorKey(ctor)
+// dependencies have been resolved.
+func (c *container) RegisterAtEnd(ctor constructor) error {
+	ctorKey, file, line, err := getConstructorInfo(ctor)
 	if err != nil {
 		return fmt.Errorf("registerAtEnd: %w", err)
 	}
 
+	ctorType := reflect.TypeOf(ctor)
+	returnType, err := getReturnType(ctorKey, ctorType)
+	if err != nil {
+		return fmt.Errorf("%s:%d: registerAtEnd: %w", file, line, err)
+	}
+
 	c.atEndEntries = append(c.atEndEntries, entry{
-		id:                    ctorKey,
-		constructor:           ctor,
-		constructorParameters: deps,
+		key:         ctorKey,
+		file:        file,
+		line:        line,
+		constructor: ctor,
+		returnType:  returnType,
 	})
 	return nil
 }
 
-// LoadDependencies builds the dependency graph, resolves the topological order,
-// invokes all registered constructors, and finally invokes any at-end constructors.
+// LoadDependencies builds the dependency graph by inspecting constructor
+// parameter types, resolves the topological order, and invokes all
+// constructors followed by any at-end constructors.
 func (c *container) LoadDependencies() error {
-	// Return the first accumulated error, if any.
 	if len(c.errs) > 0 {
 		return c.errs[0]
 	}
 
-	// Build the dependency edges in the graph.
-	for _, e := range c.dependencyContainerMap {
-		for _, dep := range e.constructorParameters {
-			depEntry, err := c.getEntry(dep)
+	// Build DAG edges by matching parameter types to provider return types.
+	for _, e := range c.keyToEntry {
+		ctorType := reflect.TypeOf(e.constructor)
+		for i := 0; i < ctorType.NumIn(); i++ {
+			paramType := ctorType.In(i)
+			provider, err := c.findProvider(paramType)
 			if err != nil {
-				return fmt.Errorf("loadDependencies: %w", err)
+				return fmt.Errorf("%s:%d: loadDependencies: %s requires %v: %w", e.file, e.line, e.key, paramType, err)
 			}
-			if err := c.graph.AddEdge(e.id, depEntry.id); err != nil {
-				return fmt.Errorf("loadDependencies: failed to add edge: %w", err)
+			if err := c.graph.AddEdge(e.dagID, provider.dagID); err != nil {
+				return fmt.Errorf("%s:%d: loadDependencies: failed to add edge: %w", e.file, e.line, err)
 			}
 		}
 	}
 
-	// Walk the graph in topological order.
-	c.orderedDependencyKeys = nil
-	c.graph.OrderedWalk(visitor{orderedDependencyKeys: &c.orderedDependencyKeys})
+	// Topological walk.
+	var orderedKeys []string
+	c.graph.OrderedWalk(visitor{orderedKeys: &orderedKeys})
 
 	// Invoke constructors in reverse topological order (leaves first).
-	for i := len(c.orderedDependencyKeys) - 1; i >= 0; i-- {
-		key := c.orderedDependencyKeys[i]
+	for i := len(orderedKeys) - 1; i >= 0; i-- {
+		key := orderedKeys[i]
 		if err := c.invokeConstructor(key); err != nil {
 			return err
 		}
 	}
 
-	// Invoke at-end constructors in registration order.
+	// Invoke at-end constructors.
 	for _, atEnd := range c.atEndEntries {
-		if err := c.invokeAtEndConstructor(atEnd); err != nil {
+		if err := c.invokeEntry(atEnd); err != nil {
 			return err
 		}
 	}
@@ -148,148 +181,136 @@ func (c *container) LoadDependencies() error {
 	return nil
 }
 
-// invokeConstructor invokes a single registered constructor by its key,
-// resolving its dependencies from already-initialized entries.
+// findProvider finds the registered entry that provides the given type.
+// Supports both exact type matches and interface satisfaction.
+// Returns an error if multiple providers implement the same interface.
+func (c *container) findProvider(t reflect.Type) (entry, error) {
+	// Exact type match.
+	if e, ok := c.typeToEntry[t]; ok {
+		return e, nil
+	}
+
+	// Interface match: find providers whose return type implements t.
+	if t.Kind() == reflect.Interface {
+		var matches []entry
+		for _, e := range c.typeToEntry {
+			if e.returnType.Implements(t) {
+				matches = append(matches, e)
+			}
+		}
+		if len(matches) == 1 {
+			return matches[0], nil
+		}
+		if len(matches) > 1 {
+			names := make([]string, len(matches))
+			for i, m := range matches {
+				names[i] = fmt.Sprintf("%s (%s:%d)", m.key, m.file, m.line)
+			}
+			return entry{}, fmt.Errorf("multiple providers implement %v: %v", t, names)
+		}
+	}
+
+	return entry{}, fmt.Errorf("no provider registered for %v", t)
+}
+
+// invokeConstructor invokes a constructor by its key, resolving args from
+// already-initialized providers.
 func (c *container) invokeConstructor(key string) error {
-	e := c.dependencyContainerMap[key]
+	e := c.keyToEntry[key]
+	return c.invokeAndStore(key, e)
+}
+
+// invokeEntry invokes an arbitrary entry (used for at-end constructors).
+func (c *container) invokeEntry(e entry) error {
+	return c.invokeAndStore(e.key, e)
+}
+
+// invokeAndStore invokes a constructor, validates its result, and stores
+// the resolved dependency.
+func (c *container) invokeAndStore(key string, e entry) error {
 	value := reflect.ValueOf(e.constructor)
+	ctorType := value.Type()
 
-	if err := validateReturnSignature(key, value); err != nil {
+	if err := validateReturnSignature(key, ctorType); err != nil {
 		return err
 	}
 
-	args, err := c.resolveArgs(e.constructorParameters)
+	// Resolve arguments by type.
+	args, err := c.resolveArgsByType(ctorType)
 	if err != nil {
-		return err
-	}
-
-	if err := validateArguments(key, value, args); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", key, err)
 	}
 
 	result := value.Call(args)
 	if err := extractError(key, result); err != nil {
-		return err
+		return fmt.Errorf("%s:%d: %w", e.file, e.line, err)
 	}
 
-	if len(result) > 0 {
+	// Store the result for dependents.
+	if len(result) > 0 && e.returnType != nil {
 		e.dependency = result[0].Interface()
-		c.dependencyContainerMap[key] = e
+		c.keyToEntry[key] = e
+		c.typeToEntry[e.returnType] = e
 	}
+
 	return nil
 }
 
-// invokeAtEndConstructor invokes a single at-end constructor.
-func (c *container) invokeAtEndConstructor(atEnd entry) error {
-	value := reflect.ValueOf(atEnd.constructor)
-
-	if err := validateReturnSignature(atEnd.id, value); err != nil {
-		return err
-	}
-
-	args, err := c.resolveArgs(atEnd.constructorParameters)
-	if err != nil {
-		return err
-	}
-
-	if err := validateArguments(atEnd.id, value, args); err != nil {
-		return err
-	}
-
-	result := value.Call(args)
-	return extractError(atEnd.id, result)
-}
-
-// resolveArgs resolves the already-initialized dependencies for a list of
-// constructor parameters.
-func (c *container) resolveArgs(params []constructor) ([]reflect.Value, error) {
+// resolveArgsByType resolves args by finding the provider for each parameter type.
+func (c *container) resolveArgsByType(ctorType reflect.Type) ([]reflect.Value, error) {
 	var args []reflect.Value
-	for _, param := range params {
-		dep, err := c.get(param)
+	for i := 0; i < ctorType.NumIn(); i++ {
+		paramType := ctorType.In(i)
+		provider, err := c.findProvider(paramType)
 		if err != nil {
 			return nil, err
 		}
-		args = append(args, reflect.ValueOf(dep))
+		if provider.dependency == nil {
+			return nil, fmt.Errorf("dependency %v not yet initialized", paramType)
+		}
+		args = append(args, reflect.ValueOf(provider.dependency))
 	}
 	return args, nil
 }
 
-// getEntry returns the entry for a constructor, or an error if not found.
-func (c *container) getEntry(ctor constructor) (entry, error) {
-	ctorKey, err := getConstructorKey(ctor)
-	if err != nil {
-		return entry{}, fmt.Errorf("getEntry: %w", err)
-	}
-	e, ok := c.dependencyContainerMap[ctorKey]
-	if !ok {
-		return entry{}, fmt.Errorf("getEntry: constructor not registered: %s", ctorKey)
-	}
-	return e, nil
-}
+// --- Validation helpers ---
 
-// get returns the resolved dependency for a constructor, or an error if
-// the dependency has not yet been initialized.
-func (c *container) get(ctor constructor) (dependency, error) {
-	ctorKey, err := getConstructorKey(ctor)
-	if err != nil {
-		return nil, err
-	}
-	dep := c.dependencyContainerMap[ctorKey].dependency
-	if dep != nil {
-		return dep, nil
-	}
-	return nil, fmt.Errorf("dependency not present: %s", ctorKey)
-}
-
-// --- Validation helpers (pure functions, no state) ---
-
-// validateReturnSignature checks that a constructor has at most 2 return values,
-// and that the second (if present) is of type error.
-func validateReturnSignature(key string, value reflect.Value) error {
-	funcType := value.Type()
-	numOut := funcType.NumOut()
+// getReturnType extracts the provided type from a constructor's return signature.
+// Returns nil for void constructors.
+func getReturnType(key string, ctorType reflect.Type) (reflect.Type, error) {
+	numOut := ctorType.NumOut()
 
 	if numOut > 2 {
-		return fmt.Errorf("%s: constructor must have at most 2 return values, got %d", key, numOut)
+		return nil, fmt.Errorf("%s: constructor must have at most 2 return values, got %d", key, numOut)
 	}
 
 	if numOut == 2 {
-		if funcType.Out(1) != reflect.TypeOf((*error)(nil)).Elem() {
-			return fmt.Errorf("%s: second return value must be of type error", key)
+		if ctorType.Out(1) != reflect.TypeOf((*error)(nil)).Elem() {
+			return nil, fmt.Errorf("%s: second return value must be of type error", key)
 		}
 	}
 
-	return nil
+	if numOut == 0 {
+		return nil, nil
+	}
+
+	returnType := ctorType.Out(0)
+
+	// If the only return is error, it's a side-effect constructor.
+	if numOut == 1 && returnType == reflect.TypeOf((*error)(nil)).Elem() {
+		return nil, nil
+	}
+
+	return returnType, nil
 }
 
-// validateArguments checks that the provided arguments match the constructor's
-// parameter types in number and kind.
-func validateArguments(key string, value reflect.Value, args []reflect.Value) error {
-	funcType := value.Type()
-
-	if funcType.NumIn() != len(args) {
-		return fmt.Errorf("%s: expected %d arguments, got %d", key, funcType.NumIn(), len(args))
-	}
-
-	for i := 0; i < len(args); i++ {
-		expectedType := funcType.In(i)
-		argType := args[i].Type()
-
-		if expectedType.Kind() == reflect.Interface && !argType.Implements(expectedType) {
-			return fmt.Errorf("%s: argument %d does not implement %v (got %v)", key, i, expectedType, argType)
-		}
-
-		if expectedType.Kind() != reflect.Interface && expectedType != argType {
-			return fmt.Errorf("%s: argument %d type mismatch, expected %v, got %v", key, i, expectedType, argType)
-		}
-	}
-
-	return nil
+// validateReturnSignature checks return value rules.
+func validateReturnSignature(key string, ctorType reflect.Type) error {
+	_, err := getReturnType(key, ctorType)
+	return err
 }
 
 // extractError inspects the result of a constructor call and returns any error.
-// Handles both single-return (where the value itself might be an error) and
-// two-return (value, error) signatures.
 func extractError(key string, result []reflect.Value) error {
 	if len(result) == 1 {
 		firstVal := result[0]
@@ -305,8 +326,6 @@ func extractError(key string, result []reflect.Value) error {
 		if secondVal.IsNil() {
 			return nil
 		}
-		// Safe to cast: validateReturnSignature already verified the second
-		// return type is error before we reach this point.
 		return secondVal.Interface().(error)
 	}
 
@@ -322,16 +341,23 @@ func isNillableKind(k reflect.Kind) bool {
 	return false
 }
 
-// getConstructorKey derives a unique string key from a constructor function
-// using its runtime function pointer.
-func getConstructorKey(ctor constructor) (string, error) {
+// getConstructorInfo derives a unique string key, file and line from a constructor function.
+func getConstructorInfo(ctor constructor) (string, string, int, error) {
 	funcValue := reflect.ValueOf(ctor)
 
 	if funcValue.Kind() != reflect.Func {
-		return "", errors.New("constructor must be a function")
+		return "", "", 0, errors.New("constructor must be a function")
 	}
 
-	funcName := runtime.FuncForPC(funcValue.Pointer()).Name()
+	ptr := funcValue.Pointer()
+	f := runtime.FuncForPC(ptr)
+	if f == nil {
+		return "", "", 0, errors.New("cannot determine function info")
+	}
+
+	funcName := f.Name()
+	file, line := f.FileLine(ptr)
+
 	parts := strings.Split(funcName, "/")
 	lastPart := parts[len(parts)-1]
 	subParts := strings.SplitN(lastPart, ".", 2)
@@ -339,33 +365,30 @@ func getConstructorKey(ctor constructor) (string, error) {
 	packageName := strings.Join(parts[:len(parts)-1], "/") + "/" + subParts[0]
 	functionName := subParts[1]
 
-	return packageName + "." + functionName, nil
+	return packageName + "." + functionName, file, line, nil
 }
 
 // --- default global container ---
 
 var defaultContainer = newContainer()
 
-// Register registers a constructor and its dependency constructors.
-// The constructor must be a function. Dependencies are identified by their
-// function pointer and resolved automatically during LoadDependencies.
-func Register(ctor constructor, deps ...constructor) error {
-	return defaultContainer.Register(ctor, deps...)
+// Register registers a constructor. Dependencies are inferred automatically
+// by matching parameter types to return types of other registered constructors.
+func Register(ctor constructor) error {
+	return defaultContainer.Register(ctor)
 }
 
-// RegisterAtEnd registers a constructor to be invoked after all other
-// dependencies have been resolved.
-func RegisterAtEnd(ctor constructor, deps ...constructor) error {
-	return defaultContainer.RegisterAtEnd(ctor, deps...)
+// RegisterAtEnd registers a constructor to run after all others.
+func RegisterAtEnd(ctor constructor) error {
+	return defaultContainer.RegisterAtEnd(ctor)
 }
 
-// LoadDependencies builds the dependency graph, resolves the topological order,
-// and invokes all registered constructors.
+// LoadDependencies resolves the dependency graph and invokes all constructors.
 func LoadDependencies() error {
 	return defaultContainer.LoadDependencies()
 }
 
-// reset clears the default container. Used internally for testing.
+// resetDefault clears the default container. Used internally for testing.
 func resetDefault() {
 	defaultContainer.reset()
 }

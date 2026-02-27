@@ -12,10 +12,10 @@
 ```mermaid
 graph TD
     A["1. Register constructors (any order)"] --> B["2. LoadDependencies()"]
-    B --> C["Build DAG edges from dependencies"]
-    C --> D["Topological sort (OrderedWalk)"]
-    D --> E["Invoke constructors in reverse order (leaves first)"]
-    E --> F["Store each result for injection into dependents"]
+    B --> C["Match parameter types to return types"]
+    C --> D["Build DAG edges automatically"]
+    D --> E["Topological sort"]
+    E --> F["Invoke constructors (leaves first)"]
     F --> G["Invoke RegisterAtEnd constructors"]
 ```
 
@@ -23,12 +23,14 @@ graph TD
 
 ```mermaid
 graph BT
-    NewMessage["NewMessage()"] --> NewGreeter["NewGreeter(Message)"]
-    NewGreeter --> NewEvent["NewEvent(Greeter)"]
+    NewMessage["NewMessage() → Message"] --> NewGreeter["NewGreeter(Message) → Greeter"]
+    NewGreeter --> NewEvent["NewEvent(Greeter) → Event"]
     NewEvent -.-> AtEnd["RegisterAtEnd: StartServer(Event)"]
 ```
 
-The framework resolves this automatically — you register in **any order**, and it figures out: `NewMessage` → `NewGreeter` → `NewEvent` → `StartServer`.
+The framework **infers dependencies automatically** by matching parameter types to return types. No need to declare dependencies manually.
+
+It also features **100% type-safety**, **ambiguous dependency detection**, and **IDE-clickable error traces** (`file:line`).
 
 ## 👨‍💻 Quick Example
 
@@ -37,10 +39,9 @@ package myapp
 
 import "github.com/Ignaciojeria/ioc"
 
-// Register dependencies in any order using var _ = pattern.
-// The DAG resolves the correct initialization order.
-var _ = ioc.Register(NewEvent, NewGreeter)
-var _ = ioc.Register(NewGreeter, NewMessage)
+// Just register constructors — dependencies are inferred by type.
+var _ = ioc.Register(NewEvent)
+var _ = ioc.Register(NewGreeter)
 var _ = ioc.Register(NewMessage)
 
 type Message string
@@ -81,11 +82,10 @@ func main() {
 
 | Function | Description |
 |---|---|
-| `ioc.Register(ctor, deps...)` | Register a constructor and its dependencies |
-| `ioc.RegisterAtEnd(ctor, deps...)` | Register a constructor to run after all others |
-| `ioc.LoadDependencies()` | Resolve and invoke all constructors in topological order |
+| `ioc.Register(ctor)` | Register a constructor (dependencies inferred by type) |
+| `ioc.RegisterAtEnd(ctor)` | Register a constructor to run after all others |
+| `ioc.LoadDependencies()` | Resolve the dependency graph and invoke all constructors |
 
 ## 📜 License
 
 MIT
-
