@@ -285,10 +285,21 @@ func TestDuplicateTypeProvider(t *testing.T) {
 		t.Fatalf("first Register failed: %v", err)
 	}
 
-	// newTestMessageWithError also returns testMessage — should fail.
+	// newTestMessageWithError also returns testMessage — should NOT fail anymore.
 	err := c.Register(newTestMessageWithError)
+	if err != nil {
+		t.Fatalf("unexpected error on duplicate type provider: %v", err)
+	}
+
+	// Add a constructor that requires testMessage to trigger ambiguity.
+	err = c.Register(newTestGreeter)
+	if err != nil {
+		t.Fatalf("unexpected error registering dependent: %v", err)
+	}
+
+	err = c.LoadDependencies()
 	if err == nil {
-		t.Fatal("expected error on duplicate type provider, got nil")
+		t.Fatal("expected error on ambiguous dependency resolution, got nil")
 	}
 }
 
@@ -649,9 +660,9 @@ func TestAddEdgeError(t *testing.T) {
 
 	// Corrupt the dagID of the provider to force AddEdge failure.
 	msgType := reflect.TypeOf(testMessage(""))
-	e := c.typeToEntry[msgType]
+	e := c.typeToEntry[msgType][0]
 	e.dagID = "non-existent-id"
-	c.typeToEntry[msgType] = e
+	c.typeToEntry[msgType][0] = e
 
 	err := c.LoadDependencies()
 	if err == nil {

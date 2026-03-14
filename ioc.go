@@ -14,8 +14,8 @@ import (
 // for topological ordering.
 type container struct {
 	graph        *dag.DAG
-	typeToEntry  map[reflect.Type]entry // return type → entry
-	keyToEntry   map[string]entry       // function key → entry (for DAG ordering)
+	typeToEntry  map[reflect.Type][]entry // return type → entries
+	keyToEntry   map[string]entry         // function key → entry (for DAG ordering)
 	atEndEntries []entry
 	errs         []error
 }
@@ -47,7 +47,7 @@ func (v visitor) Visit(vertex dag.Vertexer) {
 func newContainer() *container {
 	return &container{
 		graph:       dag.NewDAG(),
-		typeToEntry: make(map[reflect.Type]entry),
+		typeToEntry: make(map[reflect.Type][]entry),
 		keyToEntry:  make(map[string]entry),
 	}
 }
@@ -55,7 +55,7 @@ func newContainer() *container {
 // reset clears all state. Used internally for testing.
 func (c *container) reset() {
 	c.graph = dag.NewDAG()
-	c.typeToEntry = make(map[reflect.Type]entry)
+	c.typeToEntry = make(map[reflect.Type][]entry)
 	c.keyToEntry = make(map[string]entry)
 	c.atEndEntries = nil
 	c.errs = nil
@@ -83,12 +83,8 @@ func (c *container) Register(ctor constructor) error {
 		return fmt.Errorf("%s:%d: register: %w", file, line, err)
 	}
 
-	// Check for duplicate providers (only if constructor has a return type).
-	if returnType != nil {
-		if existing, exists := c.typeToEntry[returnType]; exists {
-			return fmt.Errorf("%s:%d: register: type %v is already provided by %s (%s:%d)", file, line, returnType, existing.key, existing.file, existing.line)
-		}
-	}
+	// Duplicate providers check is removed here to allow multiple registrations.
+	// Ambiguity is checked during dependency resolution in findProvider.
 
 	dagID, err := c.graph.AddVertex(ctorKey)
 	if err != nil {
@@ -106,7 +102,7 @@ func (c *container) Register(ctor constructor) error {
 
 	c.keyToEntry[ctorKey] = e
 	if returnType != nil {
-		c.typeToEntry[returnType] = e
+		c.typeToEntry[returnType] = append(c.typeToEntry[returnType], e)
 	}
 
 	return nil
@@ -183,19 +179,30 @@ func (c *container) LoadDependencies() error {
 
 // findProvider finds the registered entry that provides the given type.
 // Supports both exact type matches and interface satisfaction.
-// Returns an error if multiple providers implement the same interface.
+// Returns an error if multiple providers implement the same interface or type.
 func (c *container) findProvider(t reflect.Type) (entry, error) {
 	// Exact type match.
-	if e, ok := c.typeToEntry[t]; ok {
-		return e, nil
+	if entries, ok := c.typeToEntry[t]; ok {
+		if len(entries) == 1 {
+			return entries[0], nil
+		}
+		if len(entries) > 1 {
+			names := make([]string, len(entries))
+			for i, m := range entries {
+				names[i] = fmt.Sprintf("%s (%s:%d)", m.key, m.file, m.line)
+			}
+			return entry{}, fmt.Errorf("multiple providers for exact type %v: %v", t, names)
+		}
 	}
 
 	// Interface match: find providers whose return type implements t.
 	if t.Kind() == reflect.Interface {
 		var matches []entry
-		for _, e := range c.typeToEntry {
-			if e.returnType.Implements(t) {
-				matches = append(matches, e)
+		for _, entries := range c.typeToEntry {
+			for _, e := range entries {
+				if e.returnType.Implements(t) {
+					matches = append(matches, e)
+				}
 			}
 		}
 		if len(matches) == 1 {
@@ -250,7 +257,14 @@ func (c *container) invokeAndStore(key string, e entry) error {
 	if len(result) > 0 && e.returnType != nil {
 		e.dependency = result[0].Interface()
 		c.keyToEntry[key] = e
-		c.typeToEntry[e.returnType] = e
+
+		entries := c.typeToEntry[e.returnType]
+		for i, existing := range entries {
+			if existing.key == key {
+				entries[i] = e
+				break
+			}
+		}
 	}
 
 	return nil
