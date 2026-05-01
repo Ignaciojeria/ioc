@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Graceful Shutdowns**: Introduced the `ioc.Shutdowner` interface allowing components to natively register cleanup functions (e.g., closing database connections, stopping servers). Added the global `ioc.Shutdown()` method to execute all registered cleanups in LIFO (Last-In-First-Out) order upon application termination. The framework utilizes auto-injection, meaning any constructor requesting `s ioc.Shutdowner` will automatically receive the capability without manual setup.
 - **Type-Based Dependency Inference**: `ioc.Register` now takes a single constructor. The framework automatically builds the dependency graph by matching the parameter types of a constructor to the return types of other registered constructors.
 - **Fail-Fast Ambiguity Detection**: If a constructor requires an interface, and multiple registered providers implement that interface, `LoadDependencies()` will immediately return a clear error detailing the multiple matching providers instead of silently selecting one.
 - **IDE-Clickable Error Traces**: All framework errors (e.g., missing dependencies, ambiguous providers, initialization failures) now include the exact `file:line` where the failing constructor was registered. This allows developers to `Ctrl+Click` (or `Cmd+Click`) in their IDE terminal to jump directly to the code that caused the container issue.

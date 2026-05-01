@@ -17,7 +17,14 @@ type container struct {
 	typeToEntry  map[reflect.Type][]entry // return type → entries
 	keyToEntry   map[string]entry         // function key → entry (for DAG ordering)
 	atEndEntries []entry
+	shutdowns    []func() error
 	errs         []error
+}
+
+// Shutdowner allows components to register cleanup functions that will be
+// executed sequentially in reverse order when the container is shut down.
+type Shutdowner interface {
+	RegisterShutdown(cleanup func() error)
 }
 
 type dependency any
@@ -45,11 +52,19 @@ func (v visitor) Visit(vertex dag.Vertexer) {
 
 // newContainer creates a new, empty container.
 func newContainer() *container {
-	return &container{
+	c := &container{
 		graph:       dag.NewDAG(),
 		typeToEntry: make(map[reflect.Type][]entry),
 		keyToEntry:  make(map[string]entry),
 	}
+	
+	// Self-register the container as a provider for Shutdowner.
+	// This enables seamless dependency injection of the Shutdowner interface.
+	_ = c.Register(func() Shutdowner {
+		return c
+	})
+	
+	return c
 }
 
 // reset clears all state. Used internally for testing.
@@ -58,7 +73,12 @@ func (c *container) reset() {
 	c.typeToEntry = make(map[reflect.Type][]entry)
 	c.keyToEntry = make(map[string]entry)
 	c.atEndEntries = nil
+	c.shutdowns = nil
 	c.errs = nil
+	
+	_ = c.Register(func() Shutdowner {
+		return c
+	})
 }
 
 // Register registers a constructor function. The framework automatically
@@ -174,6 +194,27 @@ func (c *container) LoadDependencies() error {
 		}
 	}
 
+	return nil
+}
+
+// RegisterShutdown adds a cleanup function to the container.
+// It is exposed through the Shutdowner interface.
+func (c *container) RegisterShutdown(cleanup func() error) {
+	c.shutdowns = append(c.shutdowns, cleanup)
+}
+
+// Shutdown executes all registered shutdown functions in reverse order (LIFO).
+// It aggregates and returns all errors encountered during the process.
+func (c *container) Shutdown() error {
+	var errs []string
+	for i := len(c.shutdowns) - 1; i >= 0; i-- {
+		if err := c.shutdowns[i](); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("shutdown errors: %s", strings.Join(errs, "; "))
+	}
 	return nil
 }
 
@@ -400,6 +441,12 @@ func RegisterAtEnd(ctor constructor) error {
 // LoadDependencies resolves the dependency graph and invokes all constructors.
 func LoadDependencies() error {
 	return defaultContainer.LoadDependencies()
+}
+
+// Shutdown executes all registered shutdown functions in the default container
+// in reverse order of their registration (LIFO).
+func Shutdown() error {
+	return defaultContainer.Shutdown()
 }
 
 // resetDefault clears the default container. Used internally for testing.

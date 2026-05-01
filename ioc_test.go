@@ -722,3 +722,139 @@ func TestAmbiguousInterfaceProvider(t *testing.T) {
 		t.Fatal("expected error for ambiguous interface provider, got nil")
 	}
 }
+
+// --- Shutdowner tests ---
+
+func TestGracefulShutdown(t *testing.T) {
+	c := newContainer()
+
+	shutdownCalled := false
+
+	// Create a constructor that requests a Shutdowner
+	ctor := func(s Shutdowner) testMessage {
+		s.RegisterShutdown(func() error {
+			shutdownCalled = true
+			return nil
+		})
+		return testMessage("shutdown-test")
+	}
+
+	if err := c.Register(ctor); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	if err := c.LoadDependencies(); err != nil {
+		t.Fatalf("LoadDependencies failed: %v", err)
+	}
+
+	if err := c.Shutdown(); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+
+	if !shutdownCalled {
+		t.Fatal("expected shutdown function to be called")
+	}
+}
+
+func TestShutdownOrder(t *testing.T) {
+	c := newContainer()
+
+	var order []string
+
+	ctor1 := func(s Shutdowner) testMessage {
+		s.RegisterShutdown(func() error {
+			order = append(order, "first-registered")
+			return nil
+		})
+		return testMessage("1")
+	}
+
+	ctor2 := func(s Shutdowner, m testMessage) testGreeter {
+		s.RegisterShutdown(func() error {
+			order = append(order, "second-registered")
+			return nil
+		})
+		return testGreeter{Message: m}
+	}
+
+	if err := c.Register(ctor1); err != nil {
+		t.Fatalf("Register ctor1 failed: %v", err)
+	}
+	if err := c.Register(ctor2); err != nil {
+		t.Fatalf("Register ctor2 failed: %v", err)
+	}
+
+	if err := c.LoadDependencies(); err != nil {
+		t.Fatalf("LoadDependencies failed: %v", err)
+	}
+
+	if err := c.Shutdown(); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+
+	// LIFO: second-registered should be executed first
+	if len(order) != 2 || order[0] != "second-registered" || order[1] != "first-registered" {
+		t.Fatalf("expected [second-registered, first-registered], got %v", order)
+	}
+}
+
+func TestShutdownErrors(t *testing.T) {
+	c := newContainer()
+
+	ctor := func(s Shutdowner) testMessage {
+		s.RegisterShutdown(func() error {
+			return errors.New("error 1")
+		})
+		s.RegisterShutdown(func() error {
+			return errors.New("error 2")
+		})
+		return testMessage("err")
+	}
+
+	if err := c.Register(ctor); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if err := c.LoadDependencies(); err != nil {
+		t.Fatalf("LoadDependencies failed: %v", err)
+	}
+
+	err := c.Shutdown()
+	if err == nil {
+		t.Fatal("expected shutdown errors, got nil")
+	}
+
+	// LIFO: error 2 happens first, then error 1
+	if !strings.Contains(err.Error(), "error 2") || !strings.Contains(err.Error(), "error 1") {
+		t.Fatalf("expected error message to contain both errors, got: %v", err)
+	}
+}
+
+func TestGlobalShutdown(t *testing.T) {
+	resetDefault()
+
+	shutdownCalled := false
+	ctor := func(s Shutdowner) testMessage {
+		s.RegisterShutdown(func() error {
+			shutdownCalled = true
+			return nil
+		})
+		return testMessage("global")
+	}
+
+	if err := Register(ctor); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if err := LoadDependencies(); err != nil {
+		t.Fatalf("LoadDependencies failed: %v", err)
+	}
+
+	if err := Shutdown(); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+
+	if !shutdownCalled {
+		t.Fatal("expected global shutdown to be called")
+	}
+
+	resetDefault()
+}

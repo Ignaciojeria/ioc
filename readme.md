@@ -57,6 +57,53 @@ func main() {
 }
 ```
 
+## 🛑 Graceful Shutdown
+
+The framework natively supports graceful shutdowns through dependency injection. Just request the `ioc.Shutdowner` interface in your constructors:
+
+```go
+func NewPostgresDB(s ioc.Shutdowner) (*DB, error) {
+    db, err := sql.Open("postgres", "...")
+    if err != nil {
+        return nil, err
+    }
+    
+    // The framework auto-injects itself and registers your cleanup function
+    s.RegisterShutdown(func() error {
+        return db.Close()
+    })
+    
+    return db, nil
+}
+```
+
+Then in your entry point, call `ioc.Shutdown()` after receiving a termination signal. Cleanups are executed in **reverse order (LIFO)**.
+
+```go
+import (
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "github.com/Ignaciojeria/ioc"
+)
+
+func main() {
+    if err := ioc.LoadDependencies(); err != nil {
+        log.Fatal(err)
+    }
+    // Wait for termination signal (e.g. Ctrl+C or Kubernetes SIGTERM)
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+    <-quit 
+    
+    // Execute graceful shutdown
+    if err := ioc.Shutdown(); err != nil {
+        log.Fatalf("Shutdown errors: %v", err)
+    }
+}
+```
+
 ## 🧠 How it works
 
 ```mermaid
@@ -85,6 +132,7 @@ graph BT
 | `ioc.Register(ctor)` | Register a constructor (dependencies inferred by type) |
 | `ioc.RegisterAtEnd(ctor)` | Register a constructor to run after all others |
 | `ioc.LoadDependencies()` | Resolve the dependency graph and invoke all constructors |
+| `ioc.Shutdown()` | Execute all registered shutdown functions in reverse order (LIFO) |
 
 ## 📜 License
 
