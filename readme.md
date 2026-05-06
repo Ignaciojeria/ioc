@@ -66,6 +66,15 @@ func main() {
 }
 ```
 
+**Example dependency graph:**
+
+```mermaid
+graph TD
+    AtEnd["RegisterAtEnd: greetAtEnd(Event)"] -.-> NewEvent["NewEvent(Greeter) → Event"]
+    NewEvent --> NewGreeter["NewGreeter(Message) → Greeter"]
+    NewGreeter --> NewMessage["NewMessage() → Message"]
+```
+
 > 💡 **Important Note on Imports:** Go's compiler removes unused packages. If a package contains dependency registrations (via global variables) but its types aren't explicitly used elsewhere, you must include a blank import (`_ "yourproject/yourpackage"`) in your `main.go` so the compiler knows to include it and execute those registrations.
 
 **Example: Global Logger Setup**
@@ -208,14 +217,6 @@ graph TD
     H -.-> I["3. ioc.Shutdown() (cleanup in reverse LIFO)"]
 ```
 
-**Example dependency graph:**
-
-```mermaid
-graph TD
-    AtEnd["RegisterAtEnd: greetAtEnd(Event)"] -.-> NewEvent["NewEvent(Greeter) → Event"]
-    NewEvent --> NewGreeter["NewGreeter(Message) → Greeter"]
-    NewGreeter --> NewMessage["NewMessage() → Message"]
-```
 
 ## 🎯 Design Philosophy
 
