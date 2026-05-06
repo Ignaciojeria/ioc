@@ -114,14 +114,34 @@ func main() {
 
 The framework is highly flexible and accepts various constructor return signatures:
 
-- **Single Return (Type only):** `func NewService() Service`
-  The dependency is registered and cannot fail during initialization.
-- **Two Returns (Type and Error):** `func NewService() (Service, error)`
-  Ideal for components that can fail (e.g., DB connections). If an error is returned, `ioc.LoadDependencies()` immediately halts and returns it.
-- **Single Return (Error only):** `func SetupConfig() error`
-  Treated as a "side-effect constructor" that can fail (e.g., loading `.env` variables). It doesn't provide a dependency to others, but its logic executes during initialization.
-- **No Returns (Void):** `func setupLogger()`
-  Pure side-effect execution without error handling (like the `slog` example).
+- **Single Return (Type only):** The dependency is registered and cannot fail during initialization.
+  ```go
+  var _ = ioc.Register(NewServer)
+  func NewServer() *http.Server {
+      return &http.Server{Addr: ":8080"}
+  }
+  ```
+- **Two Returns (Type and Error):** Ideal for components that can fail. If an error is returned, `ioc.LoadDependencies()` immediately halts and returns it.
+  ```go
+  var _ = ioc.Register(NewDB)
+  func NewDB() (*gorm.DB, error) {
+      return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+  }
+  ```
+- **Single Return (Error only):** Treated as a "side-effect constructor" that can fail. It provides no dependency to others, but its logic executes during initialization.
+  ```go
+  var _ = ioc.Register(SetupTracing)
+  func SetupTracing() error {
+      return otel.InitProvider() // OpenTelemetry example
+  }
+  ```
+- **No Returns (Void):** Pure side-effect execution without error handling.
+  ```go
+  var _ = ioc.Register(setupLogger)
+  func setupLogger() {
+      slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+  }
+  ```
 
 > ⚠️ **Note:** Constructors cannot return more than 2 values, and if they return exactly 2 values, the second one **must** be an `error`.
 
