@@ -3,15 +3,15 @@
 [![codecov](https://codecov.io/gh/Ignaciojeria/ioc/branch/main/graph/badge.svg)](https://codecov.io/gh/Ignaciojeria/ioc)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Ignaciojeria/ioc)](https://goreportcard.com/report/github.com/Ignaciojeria/ioc)
 
-**Idiomatic by design:** Just like Go uses a Directed Acyclic Graph (DAG) to prevent circular package imports, `einar-ioc` uses a DAG to resolve your application's dependencies. It automatically builds this graph from your registered return types and injects their dependencies in topological order, ensuring a cycle-free and predictable architecture.
 
 ## 🔧 Installation
 
     go get github.com/Ignaciojeria/ioc@latest
 
-The framework **infers dependencies automatically** by matching parameter types to return types. Type matching is **package-aware**, meaning two types with the same name in different packages are treated as distinct dependencies. No need to declare dependencies manually.
-
-It also features:
+**Key Features:**
+- **Automatic Inference**: Infers dependencies automatically by matching parameter types to return types. No need to declare them manually.
+- **Package-Aware Matching**: Two types with the same name in different packages are treated as distinct dependencies.
+- **Cycle-Free by Design**: Resolves dependencies using a Directed Acyclic Graph (DAG), ensuring your architecture remains strictly predictable and cycle-free.
 - **Singleton Lifecycle**: All dependencies are instantiated exactly once as singletons and injected in topological order.
 - **Flexible Registration**: Register interfaces, concrete implementations, or any type of function. Anything with an injectable return value is valid for registration.
 - **Ambiguous Dependency Detection**: Detects and reports when multiple providers implement the same interface or type.
