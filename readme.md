@@ -212,7 +212,7 @@ graph TD
 graph BT
     NewMessage["NewMessage() → Message"] --> NewGreeter["NewGreeter(Message) → Greeter"]
     NewGreeter --> NewEvent["NewEvent(Greeter) → Event"]
-    NewEvent -.-> AtEnd["RegisterAtEnd: StartServer(Event)"]
+    NewEvent -.-> AtEnd["RegisterAtEnd: greetAtEnd(Event)"]
 ```
 
 ## 🎯 Design Philosophy
