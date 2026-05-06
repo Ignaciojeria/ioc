@@ -2,8 +2,6 @@
 
 [![codecov](https://codecov.io/gh/Ignaciojeria/ioc/branch/main/graph/badge.svg)](https://codecov.io/gh/Ignaciojeria/ioc)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Ignaciojeria/ioc)](https://goreportcard.com/report/github.com/Ignaciojeria/ioc)
-
-
 ## 🔧 Installation
 
     go get github.com/Ignaciojeria/ioc@latest
@@ -216,6 +214,38 @@ graph BT
     NewGreeter --> NewEvent["NewEvent(Greeter) → Event"]
     NewEvent -.-> AtEnd["RegisterAtEnd: StartServer(Event)"]
 ```
+
+## 🎯 Design Philosophy
+
+This framework intentionally focuses on **application bootstrap and long-lived dependency orchestration**.
+
+It is designed around a simple principle:
+
+> Only long-lived infrastructure belongs to the container.
+
+Examples:
+- Database connections
+- HTTP servers
+- Pub/Sub clients
+- Configuration
+- Loggers
+- Telemetry providers
+- Repositories
+- Application services
+
+### Why no transient or scoped lifecycles?
+
+In Go, transient dependencies are typically cheap to instantiate and can be created directly where needed.
+
+Request-scoped state is usually better handled through `context.Context` and explicit function composition instead of container-managed scopes.
+
+This keeps the framework:
+- deterministic
+- cycle-free
+- easy to debug
+- lightweight
+- idiomatic to Go
+- free from runtime magic
 
 ## 📌 API
 
