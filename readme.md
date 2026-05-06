@@ -198,21 +198,23 @@ func main() {
 
 ```mermaid
 graph TD
-    A["1. Register constructors (any order)"] --> B["2. LoadDependencies()"]
+    A["1. Register constructors"] --> B["2. LoadDependencies()"]
     B --> C["Match parameter types to return types"]
     C --> D["Build DAG edges automatically"]
     D --> E["Topological sort"]
     E --> F["Invoke constructors (leaves first)"]
     F --> G["Invoke RegisterAtEnd constructors"]
+    G -.-> H["... Application Runs ..."]
+    H -.-> I["3. ioc.Shutdown() (cleanup in reverse LIFO)"]
 ```
 
 **Example dependency graph:**
 
 ```mermaid
-graph BT
-    NewMessage["NewMessage() → Message"] --> NewGreeter["NewGreeter(Message) → Greeter"]
-    NewGreeter --> NewEvent["NewEvent(Greeter) → Event"]
-    NewEvent -.-> AtEnd["RegisterAtEnd: greetAtEnd(Event)"]
+graph TD
+    AtEnd["RegisterAtEnd: greetAtEnd(Event)"] -.-> NewEvent["NewEvent(Greeter) → Event"]
+    NewEvent --> NewGreeter["NewGreeter(Message) → Greeter"]
+    NewGreeter --> NewMessage["NewMessage() → Message"]
 ```
 
 ## 🎯 Design Philosophy
