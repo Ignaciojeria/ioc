@@ -14,7 +14,6 @@ The framework **infers dependencies automatically** by matching parameter types 
 It also features:
 - **Singleton Lifecycle**: All dependencies are instantiated exactly once as singletons and injected in topological order.
 - **Flexible Registration**: Register interfaces, concrete implementations, or any type of function. Anything with an injectable return value is valid for registration.
-- **100% Type-Safety**: Ensures correct dependency types at load time.
 - **Ambiguous Dependency Detection**: Detects and reports when multiple providers implement the same interface or type.
 - **IDE-Clickable Error Traces**: Traces errors directly to the source (`file:line`).
 
