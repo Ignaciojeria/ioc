@@ -63,6 +63,67 @@ func main() {
 }
 ```
 
+> 💡 **Important Note on Imports:** Go's compiler removes unused packages. If a package contains dependency registrations (via global variables) but its types aren't explicitly used elsewhere, you must include a blank import (`_ "yourproject/yourpackage"`) in your `main.go` so the compiler knows to include it and execute those registrations.
+
+**Example: Global Logger Setup**
+
+Here is a common scenario: configuring `slog` globally. Since no other package needs to import `logger` directly (they just use `slog` from the standard library), you must use a blank import in `main.go`.
+
+```go
+// logger/logger.go
+package logger
+
+import (
+	"log/slog"
+	"os"
+	"github.com/Ignaciojeria/ioc"
+)
+
+// Register a void side-effect constructor
+var _ = ioc.Register(setupLogger)
+
+func setupLogger() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+}
+```
+
+```go
+// main.go
+package main
+
+import (
+	"log"
+	"log/slog"
+	"github.com/Ignaciojeria/ioc"
+	
+	// Blank import to trigger the logger registration
+	_ "yourproject/logger"
+)
+
+func main() {
+	if err := ioc.LoadDependencies(); err != nil {
+		log.Fatal(err)
+	}
+	slog.Info("Dependencies loaded and logger is configured!")
+}
+```
+
+## ✍️ Constructor Signatures
+
+The framework is highly flexible and accepts various constructor return signatures:
+
+- **Single Return (Type only):** `func NewService() Service`
+  The dependency is registered and cannot fail during initialization.
+- **Two Returns (Type and Error):** `func NewService() (Service, error)`
+  Ideal for components that can fail (e.g., DB connections). If an error is returned, `ioc.LoadDependencies()` immediately halts and returns it.
+- **Single Return (Error only):** `func SetupConfig() error`
+  Treated as a "side-effect constructor" that can fail (e.g., loading `.env` variables). It doesn't provide a dependency to others, but its logic executes during initialization.
+- **No Returns (Void):** `func setupLogger()`
+  Pure side-effect execution without error handling (like the `slog` example).
+
+> ⚠️ **Note:** Constructors cannot return more than 2 values, and if they return exactly 2 values, the second one **must** be an `error`.
+
 ## 🛑 Graceful Shutdown
 
 The framework natively supports graceful shutdowns through dependency injection. Just request the `ioc.Shutdowner` interface in your constructors:
