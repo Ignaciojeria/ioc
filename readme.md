@@ -70,7 +70,7 @@ func main() {
 
 ```mermaid
 graph TD
-    AtEnd["RegisterAtEnd: greetAtEnd(Event)"] -.-> NewEvent["NewEvent(Greeter) → Event"]
+    AtEnd["RegisterAtEnd: greetAtEnd(Event)"] --> NewEvent["NewEvent(Greeter) → Event"]
     NewEvent --> NewGreeter["NewGreeter(Message) → Greeter"]
     NewGreeter --> NewMessage["NewMessage() → Message"]
 ```
