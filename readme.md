@@ -25,6 +25,7 @@ package myapp
 import "github.com/Ignaciojeria/ioc"
 
 // Just register constructors — dependencies are inferred by type.
+var _ = ioc.RegisterAtEnd(greetAtEnd)
 var _ = ioc.Register(NewEvent)
 var _ = ioc.Register(NewGreeter)
 var _ = ioc.Register(NewMessage)
@@ -50,16 +51,20 @@ type Event struct {
 func NewEvent(g Greeter) Event {
 	return Event{Greeter: g}
 }
+
+func greetAtEnd(e Event) {
+	fmt.Println(e.Greeter.Message) // Prints: "Hi there!"
+}
 ```
 
 Then in your main:
 
 ```go
 func main() {
+	// This will build the graph and trigger RegisterAtEnd constructors
 	if err := ioc.LoadDependencies(); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Dependencies loaded!")
 }
 ```
 
